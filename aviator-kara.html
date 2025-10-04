@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Aviator Uçaklı Demo</title>
+<style>
+  body { background:#111; color:#fff; text-align:center; font-family:Arial; margin:0; padding:0; }
+  #chartContainer { height:400px; width:70%; margin:auto; position:relative; border:1px solid #333; border-radius:15px; overflow:hidden; background:#222; }
+  #plane { position:absolute; width:50px; height:50px; transform:translate(-50%,-50%); display:none; transition: top 0.1s, left 0.1s; }
+  .controls { margin-top:20px; }
+  input, button { padding:10px 20px; margin:5px; font-size:16px; border-radius:8px; border:none; }
+  button { background:#28a745; color:#fff; cursor:pointer; transition:0.2s; }
+  button:hover { background:#218838; }
+  button:disabled { background:#555; cursor:not-allowed; }
+  #status { margin-top:15px; font-size:20px; min-height:24px; transition:0.3s; }
+  #currentProfit { margin-top:10px; font-size:18px; color:#00ff00; font-weight:bold; }
+
+  /* Sağ üst bakiye */
+  #balanceDisplay {
+    position:fixed;
+    top:10px;
+    right:20px;
+    font-size:20px;
+    font-weight:bold;
+    color:#ffd700;
+    background:rgba(0,0,0,0.5);
+    padding:10px 15px;
+    border-radius:10px;
+    z-index:1000;
+  }
+</style>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://canvasjs.com/assets/script/canvasjs.min.js"></script>
+</head>
+<body>
+
+<h2>Aviator Uçaklı Demo</h2>
+<div id="chartContainer">
+  <img id="plane" src="aviator_jogo.png">
+</div>
+
+<div class="controls">
+  <input type="number" id="bet" placeholder="Bahis" value="100">
+  <button id="betBtn">Bahse Gir</button>
+  <button id="cashoutBtn" disabled>Cashout</button>
+</div>
+
+<div id="status">Yeni oyun yakında...</div>
+<div id="currentProfit"></div>
+
+<!-- Sağ üst bakiye -->
+<div id="balanceDisplay">Bakiye: 1000₺</div>
+
+<script>
+let dps=[],chart,xVal=0,yVal=1,crashPoint,gameTimer,gameState="waiting",cashedOut=false;
+let balance=1000,betAmount=0,activeBet=false;
+const plane=document.getElementById("plane"),container=document.getElementById("chartContainer");
+const betBtn=$("#betBtn");
+
+chart=new CanvasJS.Chart("chartContainer",{
+  title:{text:"0.00x",dockInsidePlotArea:true,verticalAlign:"center",fontSize:80},
+  theme:"dark2",
+  axisX:{gridThickness:0,tickLength:0,labelFormatter:()=>""},
+  axisY:{gridThickness:0,tickLength:0,labelFormatter:()=>""},
+  data:[{type:"area",color:"red",lineThickness:4,fillOpacity:.3,dataPoints:dps}]
+});
+chart.render();
+
+function setPlanePosition(x,y){
+  let rect=container.getBoundingClientRect();
+  let px=(x/(xVal+5))*rect.width;
+  let py=rect.height-(y/(yVal+500))*rect.height;
+  plane.style.left=px+"px"; plane.style.top=py+"px";
+}
+
+function updateBalance(){
+  $("#balanceDisplay").text("Bakiye: "+balance.toFixed(2)+"₺");
+}
+
+function startCountdown(){
+  gameState = "waiting"; 
+  plane.style.display="none"; 
+  $("#currentProfit").text("");
+  $("#cashoutBtn").prop("disabled", true);
+  betBtn.css("background","#28a745").text("Bahse Gir"); // reset
+  activeBet=false; betAmount=0; cashedOut=false;
+
+  let count=10;
+  $("#status").text("Yeni oyun "+count+" sn içinde başlıyor...");
+  let cd=setInterval(()=>{
+    count--;
+    if(count>0){
+      $("#status").text("Yeni oyun "+count+" sn içinde başlıyor...");
+    }else{
+      clearInterval(cd);
+      startGame();
+    }
+  },1000);
+}
+
+const crashPoints = [1, 1.2, 1.5, 2.2, 3.5, 5.8, 8.2,100.1,25,70,1,1,1.1,1.2,10.1,8.2,9,5,11.4]; 
+
+function startGame(){
+  dps.length=0; chart.render();
+  xVal=0; yVal=1; cashedOut=false;
+  crashPoint = crashPoints[Math.floor(Math.random() * crashPoints.length)].toFixed(2);
+  
+  gameState="running";
+  $("#status").text("Oyun başladı 🚀");
+  plane.style.display="block";
+  betBtn.css("background","#555"); // oyun başladı, iptal yok
+
+  if(gameTimer) clearInterval(gameTimer);
+  gameTimer=setInterval(updateChart,100);
+}
+
+function placeBet(){
+  if(gameState==="waiting"){
+    if(!activeBet){
+      let tempBet=parseFloat($("#bet").val())||0;
+      if(tempBet>0 && tempBet<=balance){
+        betAmount=tempBet;
+        activeBet=true;
+        balance -= betAmount;
+        updateBalance();
+        $("#status").text("Bahis yapıldı ✅ "+betAmount.toFixed(2)+"₺");
+        betBtn.css("background","#FFD700").text("Bahsi İptal Et");
+        $("#cashoutBtn").prop("disabled", false);
+      } else {
+        $("#status").text("Geçersiz bahis!");
+      }
+    } else {
+      // iptal işlemi
+      balance += betAmount;
+      updateBalance();
+      $("#status").text("Bahis iptal edildi ❌");
+      activeBet=false;
+      betAmount=0;
+      betBtn.css("background","#28a745").text("Bahse Gir");
+      $("#cashoutBtn").prop("disabled", true);
+      $("#currentProfit").text("");
+    }
+  }
+}
+
+function cashout(){
+  if(gameState==="running" && !cashedOut && activeBet){
+    cashedOut=true;
+    let mult=(yVal/50 + 1).toFixed(2);
+    let win = (betAmount * mult).toFixed(2);
+    let profit = (win - betAmount).toFixed(2);
+    balance += parseFloat(win);
+    updateBalance();
+    $("#status").text("Cashout ✅ (Kâr: "+profit+"₺) (x"+mult+")");
+    $("#cashoutBtn").prop("disabled",true);
+    $("#currentProfit").text("");
+    activeBet=false; betAmount=0;
+    betBtn.css("background","#28a745").text("Bahse Gir");
+  }
+}
+
+function updateChart(){
+  if(gameState!=="running") return;
+  yVal+=5; xVal++;
+  let mult=(yVal/50 + 1).toFixed(2);
+
+  if(parseFloat(mult)>=parseFloat(crashPoint)){
+    gameState="crashed"; clearInterval(gameTimer);
+    chart.options.title.text=mult+"x 💥"; chart.render();
+    plane.style.display="none";
+
+    if(activeBet && !cashedOut){
+      $("#status").text("Uçak düştü ❌ "+betAmount+"₺ kaybettin.");
+    } else {
+      $("#status").text("Uçak düştü");
+    }
+
+    activeBet=false; betAmount=0;
+    $("#cashoutBtn").prop("disabled",true);
+    $("#currentProfit").text("");
+    betBtn.css("background","#28a745").text("Bahse Gir");
+    setTimeout(startCountdown,10000);
+    return;
+  }
+
+  if(activeBet && !cashedOut){
+    let currentProfit = (betAmount * mult - betAmount).toFixed(2);
+    $("#currentProfit").text("Güncel kâr: "+currentProfit+"₺ (x"+mult+")");
+  } else {
+    $("#currentProfit").text("");
+  }
+
+  dps.push({x:xVal,y:yVal});
+  chart.axisX[0].set("maximum",xVal+5);
+  chart.axisY[0].set("maximum",yVal+50);
+  chart.options.title.text=mult+"x";
+  chart.render();
+  setPlanePosition(xVal,yVal);
+}
+
+betBtn.click(placeBet);
+$("#cashoutBtn").click(cashout);
+updateBalance();
+startCountdown();
+</script>
+
+</body>
+</html>
